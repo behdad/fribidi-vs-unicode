@@ -37,15 +37,15 @@ parse_char_type (const char *s, int len)
 }
 
 static FriBidiStrIndex *
-parse_results_line (const char *line,
+parse_reorder_line (const char *line,
 		    FriBidiStrIndex *len)
 {
     GArray *map;
     FriBidiStrIndex l;
     char *end;
 
-    if (!strncmp (line, "@Result:", 8))
-	line += 8;
+    if (!strncmp (line, "@Reorder:", 9))
+	line += 9;
 
     map = g_array_new (FALSE, FALSE, sizeof (FriBidiStrIndex));
 
@@ -155,12 +155,16 @@ main (int argc, char **argv)
 
 	line_no++;
 
-	if (!strncmp (line, "@Type:", 6))
+	if (line[0] == '#' || line[0] == '\0')
 	    continue;
 
-	if (!strncmp (line, "@Result:", 8)) {
-	    g_free (expected_ltor);
-	    expected_ltor = parse_results_line (line, &expected_ltor_len);
+	if (line[0] == '@')
+	{
+	    if (!strncmp (line, "@Reorder:", 9)) {
+		g_free (expected_ltor);
+		expected_ltor = parse_reorder_line (line, &expected_ltor_len);
+		continue;
+	    }
 	    continue;
 	}
 
