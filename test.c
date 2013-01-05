@@ -36,6 +36,52 @@ parse_char_type (const char *s, int len)
     g_assert_not_reached ();
 }
 
+static FriBidiLevel *
+parse_levels_line (const char *line,
+		   FriBidiLevel *len)
+{
+    GArray *levels;
+
+    if (!strncmp (line, "@Levels:", 8))
+	line += 8;
+
+    levels = g_array_new (FALSE, FALSE, sizeof (FriBidiLevel));
+
+    while (*line)
+    {
+	FriBidiLevel l;
+	char *end;
+
+	errno = 0;
+	l = strtol (line, &end, 10);
+	if (errno != EINVAL && line != end)
+	{
+	  g_array_append_val (levels, l);
+	  line = end;
+	  continue;
+	}
+
+	while (isspace (*line))
+	  line++;
+
+	if (*line == 'x')
+	{
+	  l = (FriBidiLevel) -1;
+	  g_array_append_val (levels, l);
+	  line++;
+	  continue;
+	}
+
+	if (!*line)
+	  break;
+
+	g_assert_not_reached ();
+    }
+
+    *len = levels->len;
+    return (FriBidiLevel *) g_array_free (levels, FALSE);
+}
+
 static FriBidiStrIndex *
 parse_reorder_line (const char *line,
 		    FriBidiStrIndex *len)
@@ -105,7 +151,10 @@ main (int argc, char **argv)
     FriBidiStrIndex ltor_len = 0;
     FriBidiCharType *types = NULL;
     FriBidiStrIndex types_len = 0;
+    FriBidiLevel *expected_levels = NULL;
+    FriBidiStrIndex expected_levels_len = 0;
     FriBidiLevel *levels = NULL;
+    FriBidiStrIndex levels_len = 0;
     int base_dir_flags, base_dir_mode;
     int numerrs = 0;
     int line_no = 0;
@@ -165,6 +214,11 @@ main (int argc, char **argv)
 		expected_ltor = parse_reorder_line (line, &expected_ltor_len);
 		continue;
 	    }
+	    if (!strncmp (line, "@Levels:", 8)) {
+		g_free (expected_levels);
+		expected_levels = parse_levels_line (line, &expected_levels_len);
+		continue;
+	    }
 	    continue;
 	}
 
@@ -174,6 +228,7 @@ main (int argc, char **argv)
 
 	g_free (levels);
 	levels = g_malloc (sizeof (FriBidiLevel) * types_len);
+	levels_len = types_len;
 
 	g_free (ltor);
 	ltor = g_malloc (sizeof (FriBidiStrIndex) * types_len);
@@ -215,6 +270,16 @@ main (int argc, char **argv)
 
 	    /* Compare */
 	    matches = TRUE;
+	    if (levels_len != expected_levels_len)
+		matches = FALSE;
+	    if (matches)
+		for (i = 0; i < levels_len; i++)
+		    if (levels[i] != expected_levels[i] &&
+			expected_levels[i] != (FriBidiLevel) -1) {
+			matches = FALSE;
+			break;
+		    }
+
 	    if (ltor_len != expected_ltor_len)
 		matches = FALSE;
 	    if (matches)
@@ -223,17 +288,33 @@ main (int argc, char **argv)
 			matches = FALSE;
 			break;
 		    }
-	    if (!matches) {
+
+	    if (!matches)
+	    {
 		numerrs++;
+
 		g_printerr ("failure on line %d\n", line_no);
 		g_printerr ("input is: %s\n", line);
 		g_printerr ("base dir: %s\n", base_dir_mode==0 ? "auto"
 					    : base_dir_mode==1 ? "LTR" : "RTL");
-		g_printerr ("expected:");
+
+		g_printerr ("expected levels:");
+		for (i = 0; i < expected_levels_len; i++)
+		    if (expected_levels[i] == (FriBidiLevel) -1)
+			g_printerr (" x");
+		    else
+			g_printerr (" %d", expected_levels[i]);
+		g_printerr ("\n");
+		g_printerr ("returned levels:");
+		for (i = 0; i < levels_len; i++)
+		    g_printerr (" %d", levels[i]);
+		g_printerr ("\n");
+
+		g_printerr ("expected order:");
 		for (i = 0; i < expected_ltor_len; i++)
 		    g_printerr (" %d", expected_ltor[i]);
 		g_printerr ("\n");
-		g_printerr ("returned:");
+		g_printerr ("returned order:");
 		for (i = 0; i < ltor_len; i++)
 		    g_printerr (" %d", ltor[i]);
 		g_printerr ("\n");
